@@ -3,110 +3,82 @@ name: Build Kernel with Docker Support
 on:
   workflow_dispatch:
 
+env:
+  NH_ROOT: /home/runner/work/nethunter
+
 jobs:
   build:
     runs-on: ubuntu-22.04
     timeout-minutes: 180
 
     steps:
-    - name: Install dependencies (same as k0d14k Dockerfile)
+    - name: Install dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y \
-          git \
-          clang \
-          g++-11 \
-          bc \
-          llvm \
-          make \
-          build-essential \
-          libncurses-dev \
-          bison \
-          flex \
-          libssl-dev \
-          libelf-dev \
-          zip \
-          lld
+        sudo apt-get install -y git clang g++-11 bc llvm make build-essential libncurses-dev bison flex libssl-dev libelf-dev zip lld
+
+    - name: Prepare directories
+      run: mkdir -p ${{ env.NH_ROOT }}
 
     - name: Clone setup repo
       run: |
-        git clone https://github.com/k0d14k/mi_9_cepheus_kali_nethunter_setup /home/runner/work/nethunter
-        cd /home/runner/work/nethunter
-        git submodule update --init --recursive || true
+        git clone https://github.com/k0d14k/mi_9_cepheus_kali_nethunter_setup ${{ env.NH_ROOT }}/setup
 
     - name: Clone kernel source
       run: |
-        cd /home/runner/work/nethunter
-        git clone https://github.com/k0d14k/kernel_xiaomi_cepheus
+        git clone https://github.com/k0d14k/kernel_xiaomi_cepheus ${{ env.NH_ROOT }}/kernel_xiaomi_cepheus
 
     - name: Clone Kali NH Kernel Builder
       run: |
-        cd /home/runner/work/nethunter/kernel_xiaomi_cepheus
-        git clone https://gitlab.com/kalilinux/home/runner/work/nethunter/build-scripts/kali-nethunter-kernel-builder kali-nethunter-kernel-builder
+        git clone https://gitlab.com/kalilinux/nethunter/build-scripts/kali-nethunter-kernel-builder ${{ env.NH_ROOT }}/kernel_xiaomi_cepheus/kali-nethunter-kernel-builder
 
-    - name: Clone NetHunter kernel (cyberknight777)
+    - name: Clone NetHunter kernel
       run: |
-        cd /home/runner/work/nethunter/kernel_xiaomi_cepheus
-        git clone https://github.com/cyberknight777/android_kernel_nethunter -b main nethunter
+        git clone https://github.com/cyberknight777/android_kernel_nethunter -b main ${{ env.NH_ROOT }}/kernel_xiaomi_cepheus/nethunter
 
-    - name: Apply kernel patches (from runner.sh)
+    - name: Apply kernel patches
       run: |
-        cd /home/runner/work/nethunter/kernel_xiaomi_cepheus
-        # kernel_source_patches
+        cd ${{ env.NH_ROOT }}/kernel_xiaomi_cepheus
         sed -i 's/KBUILD_CFLAGS  += -ftrivial-auto-var-init=zero/KBUILD_CFLAGS  += -ftrivial-auto-var-init=zero -enable-trivial-auto-var-init-zero-knowing-it-will-be-removed-from-clang/g' Makefile
         sed -i 's/blocksize = crypto_skcipher_blocksize(kctx->acceptor_enc);/blocksize = crypto_sync_skcipher_blocksize(kctx->acceptor_enc);/g' net/sunrpc/auth_gss/gss_krb5_wrap.c
         sed -i 's/EXPORT_SYMBOL(LZ4_armv8_decompress_safe);/EXPORT_SYMBOL(LZ4_arm64_decompress_safe);/g' lib/lz4/lz4_decompress.c
         sed -i 's/EXPORT_SYMBOL(LZ4_armv8_decompress_safe_partial);/EXPORT_SYMBOL(LZ4_arm64_decompress_safe_partial);/g' lib/lz4/lz4_decompress.c
         sed -i "s/# CONFIG_SECTION_MISMATCH_WARN_ONLY is not set/CONFIG_SECTION_MISMATCH_WARN_ONLY=y/g" arch/arm64/configs/cepheus_defconfig
 
-    - name: Apply NH Builder patches (from runner.sh)
+    - name: Apply NH Builder patches
       run: |
-        cd /home/runner/work/nethunter/kernel_xiaomi_cepheus/kali-nethunter-kernel-builder
-        # kali_nh_patches
+        cd ${{ env.NH_ROOT }}/kernel_xiaomi_cepheus/kali-nethunter-kernel-builder
         perl -i -0777 -pe "s/# begin properties.*?# end properties/# begin properties\nproperties() { '\nkernel.string=NetHunter Kernel for the Xiaomi MI9 cepheus\ndo.devicecheck=1\ndo.modules=1\ndo.systemless=0\ndo.cleanup=1\ndo.cleanuponabort=0\ndevice.name1=MI9\ndevice.name2=cepheus\ndevice.name3=MI 9\ndevice.name4=Cepheus\nsupported.versions=\nsupported.patchlevels=\n'\; } # end properties/s" anykernel3/anykernel.sh
         sed -i 's/is_slot_device=1;/is_slot_device=0;/g' anykernel3/anykernel.sh
-        
-        # cyberknight777 Kconfig
-        cd /home/runner/work/nethunter/kernel_xiaomi_cepheus
+        cd ${{ env.NH_ROOT }}/kernel_xiaomi_cepheus
         echo 'source "nethunter/Kconfig"' >> arch/arm64/Kconfig
         sed -i 's/select\tCAN_SLCAN && m/select\tCAN_SLCAN/g' nethunter/Kconfig
         sed -i "s/select MODVERSIONS//g" nethunter/Kconfig
-        
-        # fix build.sh
         sed -i -z 's/zip -r/rm `find . -name build`\\n\trm `find . -name source`\\n\tzip -r/g' kali-nethunter-kernel-builder/build.sh
 
-    - name: Add WiFi drivers (from runner.sh - tl_wn722nv2_patch)
+    - name: Add WiFi drivers
       run: |
-        cd /home/runner/work/nethunter/kernel_xiaomi_cepheus
+        cd ${{ env.NH_ROOT }}/kernel_xiaomi_cepheus
         DRIVERS_DIR=drivers/net/wireless/realtek
-        
-        # RTL8812AU
         rm -rf $DRIVERS_DIR/rtl8812au
         git submodule add http://github.com/aircrack-ng/rtl8812au.git $DRIVERS_DIR/rtl8812au
         echo "obj-\$(CONFIG_88XXAU)\t\t+= rtl8812au/" >> $DRIVERS_DIR/Makefile
         sed -i 's/CONFIG_PLATFORM_I386_PC = y/CONFIG_PLATFORM_I386_PC = n/g' $DRIVERS_DIR/rtl8812au/Makefile
         sed -i 's/CONFIG_PLATFORM_ANDROID_ARM64 = n/CONFIG_PLATFORM_ANDROID_ARM64 = y/g' $DRIVERS_DIR/rtl8812au/Makefile
-        sed -i 's/EXTRA_CFLAGS += -Wno-stringop-overread/#EXTRA_CFLAGS += -Wno-stringop-overread/g' $DRIVERS_DIR/rtl8812au/Makefile
         sed -i 's!endif # WLAN_VENDOR_REALTEK!source "drivers/net/wireless/realtek/rtl8812au/Kconfig"!g' $DRIVERS_DIR/Kconfig
         echo "endif # WLAN_VENDOR_REALTEK" >> $DRIVERS_DIR/Kconfig
-        
-        # RTL8188EUS
         git submodule add http://github.com/aircrack-ng/rtl8188eus.git $DRIVERS_DIR/rtl8188eus
         echo "obj-\$(CONFIG_RTL8188EU)\t\t+= rtl8188eus/" >> $DRIVERS_DIR/Makefile
         sed -i -z 's/CONFIG_PLATFORM_I386_PC = y/CONFIG_PLATFORM_I386_PC = n/g' $DRIVERS_DIR/rtl8188eus/Makefile
         sed -i -z 's/CONFIG_PLATFORM_ARM64_RPI = n/CONFIG_PLATFORM_ARM64_RPI = y/g' $DRIVERS_DIR/rtl8188eus/Makefile
         sed -i 's!endif # WLAN_VENDOR_REALTEK!source "drivers/net/wireless/realtek/rtl8188eus/Kconfig"!g' $DRIVERS_DIR/Kconfig
         echo "endif # WLAN_VENDOR_REALTEK" >> $DRIVERS_DIR/Kconfig
-        
-        # RTL88X2BU
         git submodule add https://github.com/ivanovborislav/rtl88x2bu $DRIVERS_DIR/rtl88x2bu
         echo "obj-\$(CONFIG_RTL8822BU)\t\t+= rtl88x2bu/" >> $DRIVERS_DIR/Makefile
         sed -i -z 's/CONFIG_PLATFORM_I386_PC = y/CONFIG_PLATFORM_I386_PC = n/g' $DRIVERS_DIR/rtl88x2bu/Makefile
         sed -i -z 's/CONFIG_PLATFORM_RPI_ARM64 = n/CONFIG_PLATFORM_RPI_ARM64 = y/g' $DRIVERS_DIR/rtl88x2bu/Makefile
         sed -i 's!endif # WLAN_VENDOR_REALTEK!source "drivers/net/wireless/realtek/rtl88x2bu/Kconfig"!g' $DRIVERS_DIR/Kconfig
         echo "endif # WLAN_VENDOR_REALTEK" >> $DRIVERS_DIR/Kconfig
-        
-        # RTL8188FU
         git submodule add https://github.com/kelebek333/rtl8188fu $DRIVERS_DIR/rtl8188fu
         echo "obj-\$(CONFIG_RTL8188FU)\t\t+= rtl8188fu/" >> $DRIVERS_DIR/Makefile
         sed -i 's!endif # WLAN_VENDOR_REALTEK!source "drivers/net/wireless/realtek/rtl8188fu/Kconfig"!g' $DRIVERS_DIR/Kconfig
@@ -114,7 +86,7 @@ jobs:
 
     - name: Add Docker support to config
       run: |
-        cd /home/runner/work/nethunter/kernel_xiaomi_cepheus
+        cd ${{ env.NH_ROOT }}/kernel_xiaomi_cepheus
         cat >> arch/arm64/configs/cepheus_defconfig << 'CONFIGS'
         
         # Docker/container support
@@ -145,27 +117,22 @@ jobs:
         CONFIG_POSIX_MQUEUE=y
         CONFIG_KEYS=y
         CONFIGS
-        
-        # 去重
         awk '!seen[$0]++' arch/arm64/configs/cepheus_defconfig > /tmp/defconfig
         mv /tmp/defconfig arch/arm64/configs/cepheus_defconfig
 
-    - name: Copy local.config
+    - name: Copy local.config and build
       run: |
-        cp /home/runner/work/nethunter/local.config /home/runner/work/nethunter/kernel_xiaomi_cepheus/kali-nethunter-kernel-builder/local.config
-
-    - name: Build kernel
-      run: |
-        cd /home/runner/work/nethunter/kernel_xiaomi_cepheus/kali-nethunter-kernel-builder
+        cp ${{ env.NH_ROOT }}/setup/local.config ${{ env.NH_ROOT }}/kernel_xiaomi_cepheus/kali-nethunter-kernel-builder/local.config
+        cd ${{ env.NH_ROOT }}/kernel_xiaomi_cepheus/kali-nethunter-kernel-builder
         bash ./build.sh <<< ""
 
     - name: Collect outputs
       run: |
-        mkdir -p /home/runner/work/nethunter/output
-        cp /home/runner/work/nethunter/kernel_xiaomi_cepheus/kali-nethunter-kernel-builder/output/* /home/runner/work/nethunter/output/ 2>/dev/null || true
-        cp /home/runner/work/nethunter/kernel_xiaomi_cepheus/kali-nethunter-kernel-builder/anykernel3/Image.gz-dtb /home/runner/work/nethunter/output/ 2>/dev/null || true
-        cp -r /home/runner/work/nethunter/kernel_xiaomi_cepheus/kali-nethunter-kernel-builder/anykernel3/modules /home/runner/work/nethunter/output/ 2>/dev/null || true
-        ls -la /home/runner/work/nethunter/output/
+        mkdir -p ${{ env.NH_ROOT }}/output
+        cp ${{ env.NH_ROOT }}/kernel_xiaomi_cepheus/kali-nethunter-kernel-builder/output/* ${{ env.NH_ROOT }}/output/ 2>/dev/null || true
+        cp ${{ env.NH_ROOT }}/kernel_xiaomi_cepheus/kali-nethunter-kernel-builder/anykernel3/Image.gz-dtb ${{ env.NH_ROOT }}/output/ 2>/dev/null || true
+        cp -r ${{ env.NH_ROOT }}/kernel_xiaomi_cepheus/kali-nethunter-kernel-builder/anykernel3/modules ${{ env.NH_ROOT }}/output/ 2>/dev/null || true
+        ls -la ${{ env.NH_ROOT }}/output/
 
     - name: Upload kernel
       uses: actions/upload-artifact@v4
