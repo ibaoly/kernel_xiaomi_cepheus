@@ -2,15 +2,6 @@ name: Build Kernel with Docker Support
 
 on:
   workflow_dispatch:
-    inputs:
-      kernel_repo:
-        description: 'Kernel source repo'
-        required: false
-        default: 'k0d14k/kernel_xiaomi_cepheus'
-      branch:
-        description: 'Branch to build'
-        required: false
-        default: 'fifteen'
 
 jobs:
   build:
@@ -21,8 +12,8 @@ jobs:
     - name: Checkout kernel source
       uses: actions/checkout@v4
       with:
-        repository: ${{ github.event.inputs.kernel_repo || 'k0d14k/kernel_xiaomi_cepheus' }}
-        ref: ${{ github.event.inputs.branch || 'fifteen' }}
+        repository: k0d14k/kernel_xiaomi_cepheus
+        ref: fifteen
         path: kernel
 
     - name: Install dependencies
@@ -43,6 +34,11 @@ jobs:
     - name: Add Docker/Container support to config
       run: |
         cd kernel
+        
+        # 先禁用 stack protector（和当前内核一致）
+        sed -i 's/CONFIG_CC_STACKPROTECTOR_STRONG=y/# CONFIG_CC_STACKPROTECTOR_STRONG is not set/' arch/arm64/configs/cepheus_defconfig
+        
+        # 添加 Docker 相关配置
         cat >> arch/arm64/configs/cepheus_defconfig << 'CONFIGS'
         
         # Docker/container support
@@ -54,21 +50,14 @@ jobs:
         CONFIG_MEMCG_SWAP=y
         CONFIG_MEMCG_SWAP_ENABLED=y
         CONFIG_BLK_CGROUP=y
-        CONFIG_BLK_DEV_THROTTLING=y
         CONFIG_CGROUP_WRITEBACK=y
         CONFIG_CGROUP_SCHED=y
         CONFIG_CGROUP_FREEZER=y
         CONFIG_CPUSETS=y
         CONFIG_CGROUP_CPUACCT=y
-        CONFIG_CGROUP_PERF=y
         CONFIG_CGROUP_BPF=y
         CONFIG_NET_CLS_CGROUP=y
         CONFIG_CGROUP_NET_PRIO=y
-        CONFIG_SOCK_CGROUP_DATA=y
-        CONFIG_NAMESPACES=y
-        CONFIG_UTS_NS=y
-        CONFIG_IPC_NS=y
-        CONFIG_NET_NS=y
         CONFIG_VETH=y
         CONFIG_BRIDGE=y
         CONFIG_BRIDGE_NETFILTER=y
@@ -81,11 +70,9 @@ jobs:
         CONFIG_NF_NAT_NEEDED=y
         CONFIG_POSIX_MQUEUE=y
         CONFIG_KEYS=y
-        CONFIG_SECCOMP=y
-        CONFIG_SECCOMP_FILTER=y
         CONFIGS
         
-        # Remove duplicate entries
+        # 去重
         awk '!seen[$0]++' arch/arm64/configs/cepheus_defconfig > /tmp/defconfig
         mv /tmp/defconfig arch/arm64/configs/cepheus_defconfig
 
