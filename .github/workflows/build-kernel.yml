@@ -29,13 +29,15 @@ jobs:
           libncurses-dev \
           clang \
           lld \
-          llvm
+          llvm \
+          gcc-aarch64-linux-gnu \
+          gcc-arm-linux-gnueabi
 
     - name: Add Docker/Container support to config
       run: |
         cd kernel
         
-        # 禁用 stack protector
+        # 禁用 stack protector（兼容性）
         sed -i 's/CONFIG_CC_STACKPROTECTOR_STRONG=y/# CONFIG_CC_STACKPROTECTOR_STRONG is not set/' arch/arm64/configs/cepheus_defconfig
         sed -i 's/CONFIG_CC_STACKPROTECTOR=y/# CONFIG_CC_STACKPROTECTOR is not set/' arch/arm64/configs/cepheus_defconfig
         
@@ -43,8 +45,6 @@ jobs:
         cat >> arch/arm64/configs/cepheus_defconfig << 'CONFIGS'
         
         # Docker/container support
-        CONFIG_PID_NS=y
-        CONFIG_USER_NS=y
         CONFIG_CGROUP_PIDS=y
         CONFIG_CGROUP_DEVICE=y
         CONFIG_MEMCG=y
@@ -83,6 +83,8 @@ jobs:
         export ARCH=arm64
         export SUBARCH=arm64
         export LOCALVERSION=-k0d14k-cepheus-nh
+        export CROSS_COMPILE=aarch64-linux-gnu-
+        export CROSS_COMPILE_ARM32=arm-linux-gnueabi-
         
         make cepheus_defconfig
         make -j$(nproc) LLVM=1 LLVM_IAS=1
