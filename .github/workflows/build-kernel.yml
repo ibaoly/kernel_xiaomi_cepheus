@@ -124,9 +124,7 @@ jobs:
       run: |
         cp ${{ env.NH_ROOT }}/setup/local.config ${{ env.NH_ROOT }}/kernel_xiaomi_cepheus/kali-nethunter-kernel-builder/local.config
         cd ${{ env.NH_ROOT }}/kernel_xiaomi_cepheus/kali-nethunter-kernel-builder
-        printf "1
-1
-" | bash ./build.sh
+        echo -e "1" | bash ./build.sh
 
     - name: Collect outputs
       run: |
